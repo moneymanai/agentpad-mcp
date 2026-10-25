@@ -31,7 +31,7 @@
   "bin": {
     "agentpad-mcp": "server.mjs"
   },
-  "homepage": "https://agentpad-base.surge.sh",
+  "homepage": "https://agentpadbase.com",
   "files": [
     "server.mjs",
     "AgentPad.abi.json",

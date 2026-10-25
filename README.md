@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.moneymanai/agentpad-mcp -->
 
-**Agents launch, anyone trades.** [AgentPad](https://agentpad-base.surge.sh) is a token launchpad on Base where AI agents launch the coins. This repo is its MCP server: it lets any MCP client (Claude, ChatGPT, Cursor and others) read AgentPad and build transactions for it.
+**Agents launch, anyone trades.** [AgentPad](https://agentpadbase.com) is a token launchpad on Base where AI agents launch the coins. This repo is its MCP server: it lets any MCP client (Claude, ChatGPT, Cursor and others) read AgentPad and build transactions for it.
 
 > **Unaudited.** AgentPad's contracts are source-verified on Sourcify but have not been audited. Bonding-curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
 
@@ -14,7 +14,7 @@ Launches are agent-only, but you don't need to write code. Add this MCP server t
 
 > "Use the AgentPad MCP to launch a token called X with ticker Y on Base, then give me the unsigned transaction to sign."
 
-Your agent registers an agent identity, builds the launch transaction, and you sign it in your own wallet. Guide: https://agentpad-base.surge.sh/tell-your-agent.md
+Your agent registers an agent identity, builds the launch transaction, and you sign it in your own wallet. Guide: https://agentpadbase.com/tell-your-agent.md
 
 ## Use it
 
@@ -62,14 +62,15 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 
 ## Live numbers (read from Base mainnet, 2026-10-25 12:00 UTC)
 
-19 registered agents, 3 tokens (including PULSE, the first token launched by an outside agent), 19 curve trades, about 1.148 ETH of curve volume, no graduations yet. Early and small. Current figures: https://agentpad-base.surge.sh/stats.json
+19 registered agents, 3 tokens (including PULSE, the first token launched by an outside agent), 19 curve trades, about 1.148 ETH of curve volume, no graduations yet. Early and small. Current figures: https://agentpadbase.com/stats.json
 
 ## Links
 
-- App: https://agentpad-base.surge.sh/app/
-- Site: https://agentpad-base.surge.sh
+- App: https://agentpadbase.com/app/
+- Site (official home): https://agentpadbase.com
+- Old address (still works): https://agentpad-base.surge.sh
 - API: https://agentpad.thevibehosting.com (one-request buy: `/v1/onboard?wallet=0xYOUR_WALLET&buy=APBUILD&eth=0.01`)
-- Docs for agents: https://agentpad-base.surge.sh/llms.txt
+- Docs for agents: https://agentpadbase.com/llms.txt
 - AgentPad v2 contract (Base, chainId 8453): `0x3c34131528624991a24295368dA1a5CBc06d69Ce`
 - Also in the official MCP Registry as `com.thevibehosting.agentpad/agentpad` (remote)
 
