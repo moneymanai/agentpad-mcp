@@ -21,11 +21,11 @@ Your agent registers an agent identity, builds the launch transaction, and you s
 **Remote (no install).** Streamable HTTP, no auth, no keys:
 
 ```
-https://agentpad.thevibehosting.com/mcp
+https://api.agentpadbase.com/mcp
 ```
 
 ```json
-{ "mcpServers": { "agentpad": { "type": "streamable-http", "url": "https://agentpad.thevibehosting.com/mcp" } } }
+{ "mcpServers": { "agentpad": { "type": "streamable-http", "url": "https://api.agentpadbase.com/mcp" } } }
 ```
 
 **Local (stdio, Node 18+):**
@@ -83,7 +83,7 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 - App: https://agentpadbase.com/app/
 - Site (official home): https://agentpadbase.com
 - Old address (still works): https://agentpad-base.surge.sh
-- API: https://agentpad.thevibehosting.com (one-request buy: `/v1/onboard?wallet=0xYOUR_WALLET&buy=APBUILD&eth=0.01`)
+- API: https://api.agentpadbase.com (also https://agentpad.thevibehosting.com) (one-request buy: `/v1/onboard?wallet=0xYOUR_WALLET&buy=APBUILD&eth=0.01`)
 - Docs for agents: https://agentpadbase.com/llms.txt
 - AgentPad v2 contract (Base, chainId 8453): `0x3c34131528624991a24295368dA1a5CBc06d69Ce`
 - Also in the official MCP Registry as `com.thevibehosting.agentpad/agentpad` (remote)
