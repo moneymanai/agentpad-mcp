@@ -61,7 +61,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.2.0' });
+const s = new McpServer({ name: 'agentpad', version: '2.3.0' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -105,9 +105,23 @@ s.registerTool('build_team_launch_tx', { description: 'AgentPad v2 is the ONLY l
   const members = [lead, ...others.map(t => t.wallet)]; const shares = [Math.round((100 - others.reduce((a, t) => a + t.sharePct, 0)) * 100), ...others.map(t => Math.round(t.sharePct * 100))];
   return tx('launchWithRoadmap', [{ name, symbol, metadataURI, team: members, shares, milestones: toMs(milestones) }, 0n, dl()], parseEther(initialBuyEth), 'Every team wallet must already be a registered agent. Simulate (eth_call) first: it reverts if a roadmap rule is broken.');
 });
-s.registerTool('build_buy_tx', { description: 'Unsigned tx: buy an AgentPad token on its curve (registered agents only before graduation). Works for v1 and v2 tokens.', inputSchema: { token: addr, eth: z.string(), slippagePct: z.number().min(0).max(50).optional() } }, async ({ token, eth, slippagePct = 3 }) => {
+s.registerTool('build_buy_tx', { description: 'Unsigned tx: buy an AgentPad token on its curve (registered agents only before graduation). Works for v1 and v2 tokens. Optional wallet (2.3.0): adds a preflight check (agent pass, ETH balance, eth_call simulation, problems, next step) so you know before signing whether it will succeed.', inputSchema: { token: addr, eth: z.string(), slippagePct: z.number().min(0).max(50).optional(), wallet: addr.optional().describe('the wallet that will sign; adds a preflight check') } }, async ({ token, eth, slippagePct = 3, wallet }) => {
   const v = await version(token); const P = v === 2 ? PAD : V1, A = v === 2 ? abi : v1abi;
-  const [out] = await rd('quoteBuy', [token, parseEther(eth)], P, A); return mk(P, A, 'buy', [token, slip(out, slippagePct), dl()], parseEther(eth));
+  const [out] = await rd('quoteBuy', [token, parseEther(eth)], P, A); const r = mk(P, A, 'buy', [token, slip(out, slippagePct), dl()], parseEther(eth));
+  // add-only (2.3.0): preflight. Same output as before plus `hint` (no wallet) or `preflight` (wallet given).
+  const o = JSON.parse(r.content[0].text); const onb = (w) => `https://agentpad.thevibehosting.com/v1/onboard?wallet=${w || '0xYourWallet'}&buy=${token}&eth=${encodeURIComponent(eth)}`;
+  if (!wallet) { o.hint = `Before a token graduates, curve buys need an AgentPad agent pass (until open trading is live). Pass wallet for a preflight check, or use agentpad_buy / ${onb()} for identity -> pass -> buy in order.`; return ok(o); }
+  try {
+    const [isA, bal, gp] = await Promise.all([rd('isAgent', [wallet], P, A).catch(() => null), c.getBalance({ address: wallet }).catch(() => null), c.getGasPrice().catch(() => null)]);
+    const value = parseEther(eth); const need = value + (gp ? gp * 300000n : 0n); const enoughEth = bal == null ? null : bal >= need;
+    let simulation; try { await c.call({ account: wallet, to: P, data: o.tx.data, value }); simulation = { ok: true }; } catch (e) { simulation = { ok: false, error: String(e.shortMessage || e.message || e).slice(0, 300) }; }
+    const problems = [];
+    if (isA === false) problems.push(`wallet is not a registered agent on ${v === 1 ? 'v1' : 'v2'}: the curve buy reverts until it has a pass (or until open trading is live). Fix: agentpad_buy tool or ${onb(wallet)}`);
+    if (enoughEth === false) problems.push(`wallet balance ${formatEther(bal)} ETH is below value + gas (~${formatEther(need)} ETH). Fund it on Base first.`);
+    if (!simulation.ok && !problems.length) problems.push('eth_call of this tx from your wallet reverted: ' + simulation.error);
+    o.preflight = { wallet, isAgent: isA, ethBalance: bal == null ? null : formatEther(bal), enoughEth, simulation, willSucceed: simulation.ok, problems, next: problems.length ? (isA === false ? onb(wallet) : null) : 'Sign and send tx from this wallet.' };
+  } catch (e) { o.preflight = { error: String(e.shortMessage || e.message || e).slice(0, 200) }; }
+  return ok(o);
 });
 s.registerTool('build_sell_tx', { description: 'Unsigned tx: sell AgentPad tokens back to the curve (whole-token amount). v1 or v2.', inputSchema: { token: addr, amount: z.string(), slippagePct: z.number().min(0).max(50).optional() } }, async ({ token, amount, slippagePct = 3 }) => {
   const v = await version(token); const P = v === 2 ? PAD : V1, A = v === 2 ? abi : v1abi;

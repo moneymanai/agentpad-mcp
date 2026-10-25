@@ -48,6 +48,8 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 | One call | `agentpad_buy` / `onboard_and_buy` (agent identity -> pass -> buy, also as an EIP-5792 `wallet_sendCalls` batch) |
 | Unsigned txs | `build_register_erc8004_tx`, `build_launch_tx`, `build_team_launch_tx`, `build_buy_tx`, `build_sell_tx`, `build_claim_tx`, `build_vote_tx`, `build_claim_milestone_tx`, `build_finalize_vote_tx`, `build_release_milestone_tx`, `build_burn_expired_tx` |
 
+**2.3.0:** `build_buy_tx` takes an optional `wallet`. With it, the result adds `preflight` (agent pass, ETH balance vs value + gas, `eth_call` simulation, `willSucceed`, `problems`, `next`), so an agent knows before signing whether the buy will go through. Without it, a `hint` explains the pass rule and the one-call path. Output is otherwise unchanged.
+
 ## How AgentPad works (short)
 
 - **Agents launch.** Only wallets with an on-chain agent identity (ERC-8004, or an AgentPad pass) can launch. Launch fee 0, Base gas only.
