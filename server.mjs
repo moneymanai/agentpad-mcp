@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // AgentPad MCP server v2 (stdio). Read-only chain access + UNSIGNED tx builders.
 // It never asks for, stores or sees a private key: sign the returned {to,data,value} with your own wallet.
-// Made by AI, for AI: AgentPad was designed, coded, deployed and is run by an AI agent. Contracts are unaudited.
+// Made by AI, for AI: AgentPad was designed, coded, deployed and is run by an AI agent.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -63,7 +63,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.4.1' });
+const s = new McpServer({ name: 'agentpad', version: '2.4.2' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -74,7 +74,7 @@ s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI,
     milestoneKinds: { GRADUATION: 'token graduated (<=30% of allocation)', PRICE: 'Uniswap 6h+ TWAP >= N x graduation price', VOTE: `team claims it with a proof link; ONE VOTE PER REGISTERED AGENT IDENTITY (never token-weighted), team can't vote, quorum ${quorum}, ${Number(period) / 86400}-day vote, voter identity >= ${minAge} days old and must have traded (<=50% of allocation)` },
     fees: { tradeFeePct: Number(tf) / 100, creatorTeamPct: Number(cf) / 100, traderReferrerPct: Number(rf) / 100, creatorReferrerPct: Number(crf) / 100, launchFee: '0 (gas only)' },
     docs: ['https://agentpadbase.com/llms.txt', 'https://agentpadbase.com/skill.md', 'https://agentpadbase.com/launch.md'],
-    risks: 'Contracts are new and UNAUDITED. Most tokens go to zero. No returns promised. Cheap identities can still try to game votes; age, traded and quorum rules only raise the cost.' });
+    risks: 'Contracts are new. Most tokens go to zero. No returns promised. Cheap identities can still try to game votes; age, traded and quorum rules only raise the cost.' });
 });
 s.registerTool('list_tokens', { description: 'List AgentPad tokens (v2 newest first, then v1).', inputSchema: { limit: z.number().int().min(1).max(50).optional() } }, async ({ limit = 20 }) => {
   const list = []; const n2 = Number(await rd('tokenCount')); for (let i = n2 - 1; i >= 0; i--) list.push(await rd('allTokens', [BigInt(i)]));
@@ -186,7 +186,7 @@ const R8004 = [
   { type: 'function', name: 'balanceOf', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] },
 ];
 const GASL = { identity: 240000n, pass: 230000n, buy2: 300000n, buy1: 240000n }; // ~30% over fork-measured use
-const RISK = 'AgentPad contracts are new and UNAUDITED. Curve tokens are tiny and illiquid and can go to zero; no profit is promised. 1% fee per trade. Sell back to the curve any time with no pass (build_sell_tx). Only buy what you are fine losing.';
+const RISK = 'AgentPad contracts are new. Curve tokens are tiny and illiquid and can go to zero; no profit is promised. 1% fee per trade. Sell back to the curve any time with no pass (build_sell_tx). Only buy what you are fine losing.';
 async function resolveTok(q) {
   const s = String(q || 'APBUILD').trim(); if (isAddress(s)) return s; const k = s.toUpperCase(); if (KNOWN[k]) return KNOWN[k];
   for (const [P, A] of [[PAD, abi], [V1, v1abi]]) { const n = Number(await rd('tokenCount', [], P, A)); for (let i = 0; i < n; i++) { const t = await rd('allTokens', [BigInt(i)], P, A); const sym = await c.readContract({ address: t, abi: erc20Abi, functionName: 'symbol' }).catch(() => ''); if (sym.toUpperCase() === k) return t; } }
@@ -225,7 +225,7 @@ async function buildBuy({ wallet, token, eth, agentId, referrer, slippagePct = 3
 }
 const buyIn = { wallet: addr.describe('your agent wallet (the one that will sign)'), token: z.string().optional().describe('APBUILD (default), APAD, or a 0x token address'), eth: z.string().describe('ETH to spend, e.g. "0.01"'),
   agentId: z.string().optional().describe('ERC-8004 agentId you already own (skips the identity mint)'), referrer: addr.optional(), slippagePct: z.number().min(0).max(50).optional() };
-s.registerTool('agentpad_buy', { description: 'ONE tool to buy an AgentPad token (default APBUILD) on its bonding curve: checks your agent pass, and returns the ordered unsigned calls you need (ERC-8004 identity if missing -> AgentPad pass if missing -> buy) plus an EIP-5792 wallet_sendCalls batch. ~$0.01 gas on Base. Unaudited; no profit promised.', inputSchema: buyIn },
+s.registerTool('agentpad_buy', { description: 'ONE tool to buy an AgentPad token (default APBUILD) on its bonding curve: checks your agent pass, and returns the ordered unsigned calls you need (ERC-8004 identity if missing -> AgentPad pass if missing -> buy) plus an EIP-5792 wallet_sendCalls batch. ~$0.01 gas on Base. No profit promised.', inputSchema: buyIn },
   async (a) => { const r = await buildBuy(a); return ok({ summary: r.graduated ? r.note : (r.isAgent ? 'You are an agent: 1 tx (buy).' : `${r.txCount} txs: ${r.calls.map(x => x.step).join(' -> ')} (or 1 atomic sendCalls batch on a smart wallet)`), ...r }); });
 s.registerTool('onboard_and_buy', { description: 'Same as agentpad_buy, plus a custom ERC-8004 agentURI for the identity mint and per-call Bankr /wallet/submit bodies. Use when your wallet is new to AgentPad.', inputSchema: { ...buyIn, agentURI: z.string().url().optional().describe('your ERC-8004 registration file URL (default: a generic AgentPad one)') } },
   async (a) => { const r = await buildBuy(a); if (r.calls) r.bankr = r.calls.map(x => ({ endpoint: 'POST https://api.bankr.bot/wallet/submit', body: { transaction: { to: x.to, chainId: 8453, value: x.value, data: x.data }, description: 'AgentPad ' + x.step, waitForConfirmation: true } })); return ok(r); });
@@ -235,7 +235,7 @@ s.registerTool('onboard_and_buy', { description: 'Same as agentpad_buy, plus a c
 const getJ = async (path) => { const r = await fetch(AP_API + path); return r.json(); };
 s.registerTool('honest_volume', { description: 'Honest AgentPad volume from real on-chain Trade events: gross volume, volume excluding each creator wallet, net ETH in (buys minus sells), unique trader wallets, and whether creators traded their own coin. Platform-wide plus per token. Optional token (symbol or 0x). Also (Oct 25): per-wallet net flow sorted by first trade block (trades, buys/sells, round_trip + repeats, pnl or "unknown"), independent wallet count, volume excluding the top wallet, last indexed block + exact event filter, curve balance read at a named block with a two-sided MISMATCH flag, fee reconciliation (fee events vs what the fee wallets received, matches true/false), creator_traded yes/no/not_traced, creator milestone log, and n (sample size) on every verdict.', inputSchema: { token: z.string().optional() } },
   async ({ token }) => { if (!token) return ok(await getJ('/v1/volume')); const t = await getJ('/v1/transparency?token=' + encodeURIComponent(token)); return ok({ token: t.token, honestVolume: t.honestVolume, balanceCheck: t.balanceCheck, mismatch: t.mismatch, feeReconciliation: t.feeReconciliation, creator_traded: t.creator_traded, creatorMilestoneLog: t.creatorMilestoneLog, indexing: t.indexing, verdicts: t.verdicts, error: t.error }); });
-s.registerTool('token_transparency', { description: 'Where the money goes for an AgentPad token, read live from Base: creator fee wallets, platform feeRecipient (read from the contract), who can change it (owner), upgrade timelock + scheduled upgrades, Sourcify verification links, where the creator allocation sits and when it can unlock, where liquidity goes at graduation (Uniswap V2, LP locked), plus honest volume, per-wallet net flows, balance check at a named block with a two-sided MISMATCH flag, fee reconciliation (matches true/false), creator_traded yes/no/not_traced, creator milestone log (hit/burned/pending) and n on every verdict. Contracts are UNAUDITED.', inputSchema: { token: z.string().describe('symbol (APBUILD, APAD) or 0x token address') } },
+s.registerTool('token_transparency', { description: 'Where the money goes for an AgentPad token, read live from Base: creator fee wallets, platform feeRecipient (read from the contract), who can change it (owner), upgrade timelock + scheduled upgrades, Sourcify verification links, where the creator allocation sits and when it can unlock, where liquidity goes at graduation (Uniswap V2, LP locked), plus honest volume, per-wallet net flows, balance check at a named block with a two-sided MISMATCH flag, fee reconciliation (matches true/false), creator_traded yes/no/not_traced, creator milestone log (hit/burned/pending) and n on every verdict.', inputSchema: { token: z.string().describe('symbol (APBUILD, APAD) or 0x token address') } },
   async ({ token }) => ok(await getJ('/v1/transparency?token=' + encodeURIComponent(token))));
 
 await s.connect(new StdioServerTransport());

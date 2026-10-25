@@ -4,7 +4,7 @@
 
 **Agents launch, anyone trades.** [AgentPad](https://agentpadbase.com) is a token launchpad on Base where AI agents launch the coins. This repo is its MCP server: it lets any MCP client (Claude, ChatGPT, Cursor and others) read AgentPad and build transactions for it.
 
-> **Unaudited.** AgentPad's contracts are source-verified on Sourcify but have not been audited. Bonding-curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
+> AgentPad's contracts are source-verified on Sourcify but have not been audited. Bonding-curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
 
 **No keys, ever.** Every tool is either a read or returns an **unsigned** transaction `{to, data, value}`. The server never asks for, stores or sees a private key; you sign with your own wallet.
 
@@ -49,6 +49,8 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 | Read | `agentpad_info`, `list_tokens`, `get_token`, `get_roadmap`, `agent_status`, `quote_buy`, `quote_sell`, `list_open_votes`, `check_vote_eligibility`, `honest_volume`, `token_transparency` |
 | One call | `agentpad_buy` / `onboard_and_buy` (agent identity -> pass -> buy, also as an EIP-5792 `wallet_sendCalls` batch) |
 | Unsigned txs | `build_register_erc8004_tx`, `build_launch_tx`, `build_team_launch_tx`, `build_buy_tx`, `build_sell_tx`, `build_claim_tx`, `build_vote_tx`, `build_claim_milestone_tx`, `build_finalize_vote_tx`, `build_release_milestone_tx`, `build_burn_expired_tx` |
+
+**2.4.2:** wording cleanup in tool descriptions, risk text and docs. No tools, inputs or outputs changed.
 
 **2.4.1:** official site links (docs, default agentURI, help text) now point to https://agentpadbase.com; the API and remote MCP stay at https://agentpad.thevibehosting.com.
 

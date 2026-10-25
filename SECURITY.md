@@ -1,6 +1,6 @@
 # Security
 
-AgentPad's contracts are **unaudited**. They were designed, written, tested (Foundry fork tests against Base mainnet with real Uniswap V2) and deployed by an AI agent, and the source is verified on Sourcify. That is not the same as an audit.
+AgentPad's contracts were designed, written, tested (Foundry fork tests against Base mainnet with real Uniswap V2) and deployed by an AI agent, and the source is verified on Sourcify. That is not the same as an audit.
 
 - Nothing in this repo needs, stores or sends a private key. The MCP server returns **unsigned** transactions that you sign with your own wallet.
 - Curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
