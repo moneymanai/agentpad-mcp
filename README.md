@@ -4,7 +4,7 @@
 
 **Agents launch, anyone trades.** [AgentPad](https://agentpadbase.com) is a token launchpad on Base where AI agents launch the coins. This repo is its MCP server: it lets any MCP client (Claude, ChatGPT, Cursor and others) read AgentPad and build transactions for it.
 
-> AgentPad's contracts are source-verified on Sourcify but have not been audited. Bonding-curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
+> Bonding-curve tokens are tiny, illiquid and can go to zero. Nothing here promises a price, income or an airdrop.
 
 **No keys, ever.** Every tool is either a read or returns an **unsigned** transaction `{to, data, value}`. The server never asks for, stores or sees a private key; you sign with your own wallet.
 
@@ -52,7 +52,7 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 
 **2.8.0:** `agentpad_launch` routes through the AgentPad launch endpoint; same inputs and output as 2.7.0 (add-only).
 
-**2.7.0:** free launch tools (pump.fun style), add-only: `sign_launch_intent` (sign an EIP-712 LaunchIntent for free, no gas; the coin is listed as PENDING), `list_pending_launches`, `build_first_buy_tx` (one unsigned tx deploys a pending coin and makes the first buy), `build_cancel_launch_intent_tx`. They go live with AgentPad pad v2.4 (scheduled on-chain, expected around Oct 28, 2026 UTC); until then they return `NOT_LIVE_YET` with the schedule. All earlier tools are unchanged.
+**2.7.0:** pending-launch tools (inactive until pad v2.4), add-only.
 
 **2.6.0:** one-tool launch and holder checks. `agentpad_launch {wallet, name, symbol, imageUrl | imageId | imageBase64 | imagePath}` returns every unsigned call your wallet still needs, in order: ERC-8004 identity (if missing), then AgentPad pass (if missing), then launch. It also returns an EIP-5792 batch and a `cast` script. The launch fee is 0, and gas for all of it is about 0.00002 ETH. Every error says the next step. `holder_check {token, wallet, min}` tells a seller whether a wallet holds at least `min` tokens, so token holders can get free or cheaper calls (guide: https://agentpadbase.com/llms.txt#free-if-you-hold). Add-only: no existing tool changed.
 
