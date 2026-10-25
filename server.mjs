@@ -63,7 +63,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.6.0' });
+const s = new McpServer({ name: 'agentpad', version: '2.7.0' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -301,5 +301,24 @@ s.registerTool('agentpad_launch', { description: 'ONE tool to launch your token 
 // add-only (2.6.0): holder check for sellers ("free if you hold"), from the public API /v1/holder
 s.registerTool('holder_check', { description: 'Does this wallet hold at least `min` whole tokens of this AgentPad (or any Base ERC-20) token right now? Read-only balanceOf at the latest block. For sellers who give token holders free or cheaper calls: check the payer address of an x402 payment (or a signed message) before granting the perk.', inputSchema: { token: z.string().describe('0x token address or a known symbol (APBUILD, APAD)'), wallet: addr, min: z.string().optional().describe('whole tokens, default "1"') } },
   async ({ token, wallet, min = '1' }) => { const r = await getJ(`/v1/holder?token=${encodeURIComponent(token)}&wallet=${wallet}&min=${encodeURIComponent(min)}`); return r.ok ? ok(r) : errOut(r); });
+
+// add-only (2.7.0, Oct 25 2026): FREE launch tools (pump.fun style), backed by the AgentPad API /v1/launch/* routes. They answer NOT_LIVE_YET
+// (with the on-chain schedule) until the pad runs v2.4, expected around Oct 28, 2026 (UTC). Never touches keys: the agent signs typedData itself.
+const FL_SOON = ' Coming with pad v2.4 (scheduled on-chain, expected around Oct 28, 2026 UTC); until then it returns code NOT_LIVE_YET with the schedule.';
+s.registerTool('sign_launch_intent', { description: 'FREE launch on AgentPad (pump.fun style): no fee, no gas, your wallet needs no ETH. Call once without signature to get EIP-712 typedData; sign it with your registered agent wallet (eth_signTypedData_v4, sends nothing), then call again with intent + signature to list the coin as PENDING. The first buyer deploys it on-chain and pays the gas; you stay the creator (same creator fees and roadmap-locked allocation as a normal launch). A picture is required.' + FL_SOON,
+  inputSchema: { creator: addr.describe('your registered agent wallet (EOA)'), name: z.string().min(1).max(64), symbol: z.string().min(1).max(16),
+    imageUrl: z.string().optional(), imageId: z.string().optional(), imageBase64: z.string().optional(), description: z.string().max(280).optional(), expiresInDays: z.number().min(0.01).max(7).optional(),
+    intent: z.record(z.string(), z.any()).optional().describe('step 2: the intent object returned by step 1'),
+    signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/).optional().describe('step 2: your signature of typedData'),
+    image: z.string().optional().describe('step 2: the image URL returned by step 1') } },
+  async (a) => { const r = await postJ('/v1/launch/intent', a); return r.ok ? ok(r) : errOut(r); });
+s.registerTool('list_pending_launches', { description: 'Coins signed by agents for a free launch but not on-chain yet. Be the first buyer: build_first_buy_tx deploys one and buys it in a single transaction. Read-only.' + FL_SOON, inputSchema: {} },
+  async () => { const r = await getJ('/v1/launch/pending'); return r.ok ? ok(r) : errOut(r); });
+s.registerTool('build_first_buy_tx', { description: 'Unsigned tx: be the FIRST BUYER of a pending AgentPad coin. One transaction deploys the coin on-chain (you pay the gas, about 2.1M gas, a few cents on Base) and buys it with `eth`. Launch fee today: 0. If someone launches it first, the tx reverts (gas only); then buy it normally with build_buy_tx.' + FL_SOON,
+  inputSchema: { id: z.string().describe('pending id from list_pending_launches'), eth: z.string().describe('ETH to spend on the first buy, e.g. "0.005"'), slippagePct: z.number().min(0).max(50).optional(), wallet: addr.optional().describe('your wallet: adds a pre-flight simulation') } },
+  async (a) => { const r = await postJ('/v1/tx/launch-and-buy', a); return r.ok ? ok(r) : errOut(r); });
+s.registerTool('build_cancel_launch_intent_tx', { description: 'Unsigned tx (creator only, gas only): permanently cancel one of your signed pending free launches by its nonce.' + FL_SOON,
+  inputSchema: { nonce: z.string() } },
+  async (a) => { const r = await postJ('/v1/tx/cancel-launch-intent', a); return r.ok ? ok(r) : errOut(r); });
 
 await s.connect(new StdioServerTransport());
