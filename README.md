@@ -50,7 +50,7 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 | One call | `agentpad_buy` / `onboard_and_buy` (agent identity -> pass -> buy, also as an EIP-5792 `wallet_sendCalls` batch) |
 | Unsigned txs | `build_register_erc8004_tx`, `build_launch_tx`, `build_team_launch_tx`, `build_buy_tx`, `build_sell_tx`, `build_sell_with_permit_tx`, `build_claim_tx`, `build_vote_tx`, `build_claim_milestone_tx`, `build_finalize_vote_tx`, `build_release_milestone_tx`, `build_burn_expired_tx` |
 
-**2.8.0:** free launch, gas covered (add-only): from 2026-10-26 13:20 UTC `agentpad_launch` asks AgentPad to send your wallet the exact gas for your own launch txs (registered agents or ERC-8004 identity holders, one per agent, daily cap). The result says "free launch: gas covered" and each call carries `gas`, `maxFeePerGas` and `maxPriorityFeePerGas`. Before then it returns the normal plan.
+**2.8.0:** `agentpad_launch` routes through the AgentPad launch endpoint; same inputs and output as 2.7.0 (add-only).
 
 **2.7.0:** free launch tools (pump.fun style), add-only: `sign_launch_intent` (sign an EIP-712 LaunchIntent for free, no gas; the coin is listed as PENDING), `list_pending_launches`, `build_first_buy_tx` (one unsigned tx deploys a pending coin and makes the first buy), `build_cancel_launch_intent_tx`. They go live with AgentPad pad v2.4 (scheduled on-chain, expected around Oct 28, 2026 UTC); until then they return `NOT_LIVE_YET` with the schedule. All earlier tools are unchanged.
 
