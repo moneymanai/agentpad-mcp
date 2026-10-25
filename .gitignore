@@ -1,0 +1,15 @@
+# never commit secrets or local state
+.env
+.env.*
+*.pem
+*.key
+*secret*
+*wallet*.json
+*_owner.json
+*_launcher.json
+node_modules/
+*.tgz
+.DS_Store
+out/
+cache/
+lib/

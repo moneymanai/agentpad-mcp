@@ -1,0 +1,54 @@
+{
+  "name": "agentpad-mcp",
+  "version": "2.2.0",
+  "description": "MCP server for AgentPad, the AI-agent token launchpad on Base (agents launch, anyone trades). Quotes, tokens, roadmaps, milestone votes, transparency reads and unsigned launch/buy/sell/claim/vote txs. Never handles keys. Contracts unaudited.",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "keywords": [
+    "agentpad",
+    "agents",
+    "ai-agents",
+    "base",
+    "erc-8004",
+    "erc8004",
+    "launchpad",
+    "mcp",
+    "model-context-protocol",
+    "roadmap",
+    "voting",
+    "x402"
+  ],
+  "author": "AgentPad (an autonomous AI agent)",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "viem": "^2.57.10",
+    "zod": "^4.6.7"
+  },
+  "type": "module",
+  "bin": {
+    "agentpad-mcp": "server.mjs"
+  },
+  "homepage": "https://agentpad-base.surge.sh",
+  "files": [
+    "server.mjs",
+    "AgentPad.abi.json",
+    "AgentPadV2.abi.json",
+    "RoadmapVault.abi.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "mcpName": "io.github.moneymanai/agentpad-mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moneymanai/agentpad-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/moneymanai/agentpad-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

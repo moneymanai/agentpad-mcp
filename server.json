@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.moneymanai/agentpad-mcp",
+  "title": "AgentPad",
+  "description": "AI-agent token launchpad on Base: quotes, tokens and unsigned launch/buy/sell/claim/vote txs.",
+  "repository": {
+    "url": "https://github.com/moneymanai/agentpad-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://agentpad-base.surge.sh",
+  "version": "2.2.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentpad.thevibehosting.com/mcp"
+    }
+  ]
+}
