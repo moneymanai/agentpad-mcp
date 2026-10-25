@@ -5,6 +5,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import * as VIEM from 'viem';
+const AP_API = process.env.AGENTPAD_API || 'https://agentpad.thevibehosting.com'; // public AgentPad API (also hosts token pictures)
 import { createPublicClient, http, encodeFunctionData, parseEther, formatEther, formatUnits, parseUnits, isAddress, zeroAddress, erc20Abi } from 'viem';
 import { base } from 'viem/chains';
 import { readFileSync } from 'node:fs';
@@ -61,7 +63,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.3.0' });
+const s = new McpServer({ name: 'agentpad', version: '2.4.0' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -96,14 +98,45 @@ s.registerTool('quote_sell', { description: 'ETH out for selling a whole-token a
 });
 s.registerTool('build_register_erc8004_tx', { description: 'Unsigned tx: register as an AgentPad v2 agent using an ERC-8004 agentId you own on Base (free, gas only, 30-day pass). Your identity = the agentId, so one agentId = one vote.', inputSchema: { agentId: z.string(), referrer: addr.optional() } }, async ({ agentId, referrer }) =>
   tx('registerViaERC8004', [BigInt(agentId), referrer || DEFAULT_REF], 0n, 'No ERC-8004 identity yet? First call IdentityRegistry ' + ERC8004 + '.register(string agentURI), then this. Or use the pass API: https://agentpad-base.surge.sh/api.txt'));
-s.registerTool('build_launch_tx', { description: 'AgentPad v2 is the ONLY launch target (v1 launches are disabled on-chain; APAD/v1 tokens still trade). Unsigned tx: one-call solo launch on AgentPad v2 with the default roadmap (5% free creator allocation: 20% at graduation, 20%/30%/30% at 2x/4x/8x graduation price). Launch fee 0; initialBuyEth optional. Creator earns 0.50% of every curve trade.', inputSchema: { name: z.string().min(1).max(64), symbol: z.string().min(1).max(16), metadataURI: z.string().describe('https:// or ipfs:// JSON with name, description, image'), initialBuyEth: z.string().optional() } }, async ({ name, symbol, metadataURI, initialBuyEth = '0' }) =>
-  tx('launch', [name, symbol, metadataURI, 0n, dl()], parseEther(initialBuyEth), 'Token address = first indexed arg of TokenLaunched in the receipt. Deadline is 10 minutes.'));
-s.registerTool('build_team_launch_tx', { description: 'AgentPad v2 is the ONLY launch target. Unsigned tx: launch on AgentPad v2 with a TEAM of up to 5 registered agents (fixed shares of creator fees + allocation) and a custom roadmap of 1-5 milestones (GRADUATION <=30%, VOTE <=50%, PRICE multiple >=1.5, shares sum 100). Send from the lead wallet.', inputSchema: {
-  lead: addr, name: z.string().min(1).max(64), symbol: z.string().min(1).max(16), metadataURI: z.string(), team: z.array(z.object({ wallet: addr, sharePct: z.number().positive() })).max(4).optional().describe('other members; lead gets the rest'),
-  milestones: z.array(msSchema).max(5).optional().describe('empty = default roadmap'), initialBuyEth: z.string().optional() } }, async ({ lead, name, symbol, metadataURI, team = [], milestones = [], initialBuyEth = '0' }) => {
+// add-only (Oct 25, 2.4.0): every launch REQUIRES a token picture. The API validates it (magic bytes + decode, >=64x64, <=2 MB, no SVG/HTML),
+// re-hosts it as a 512x512 PNG and puts it in the token metadata, then links it to the token when the launch is mined.
+const imgIn = { imageUrl: z.string().optional().describe('REQUIRED unless imageId/imageBase64 is given: https:// (or ipfs://) link to a PNG, JPEG, WebP or GIF, min 64x64, max 2 MB. We fetch, validate and re-host it.'),
+  imageId: z.string().optional().describe('id returned by upload_token_image'), imageBase64: z.string().optional().describe('raw base64 or data:image/...;base64,... of the picture (max 2 MB)'),
+  imagePath: z.string().optional().describe('stdio only: local file path of the picture; read and sent as base64') };
+const IMG_REQ = { ok: false, error: 'IMAGE_REQUIRED', message: 'A token picture is required to launch on AgentPad. Pass imageUrl, imageBase64, or imageId (from upload_token_image).', humanUrl: 'https://agentpadbase.com/v2/launch.md#token-picture-required' };
+const errOut = (o) => ({ content: [{ type: 'text', text: J(o) }], isError: true });
+const postJ = async (path, body) => { const r = await fetch(AP_API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return r.json(); };
+const fileB64 = p => { try { return readFileSync(p).toString('base64'); } catch (e) { throw new Error('cannot read imagePath: ' + e.message); } };
+const pickImg = ({ imageUrl, imageId, imageBase64, imagePath }) => { if (imagePath && !imageBase64) imageBase64 = fileB64(imagePath); return (imageUrl || imageId || imageBase64) ? { imageUrl, imageId, imageBase64 } : null; };
+s.registerTool('build_launch_tx', { description: 'AgentPad v2 is the ONLY launch target (v1 launches are disabled on-chain; APAD/v1 tokens still trade). Unsigned tx: one-call solo launch on AgentPad v2 with the default roadmap (5% free creator allocation: 20% at graduation, 20%/30%/30% at 2x/4x/8x graduation price). Launch fee 0; initialBuyEth optional. Creator earns 0.50% of every curve trade. REQUIRED (2.4.0): a token picture via imageUrl, imageBase64 or imageId (upload_token_image); missing/invalid returns IMAGE_REQUIRED / IMAGE_INVALID.', inputSchema: { name: z.string().min(1).max(64), symbol: z.string().min(1).max(16), metadataURI: z.string().optional().describe('optional: your own https:// or ipfs:// JSON; by default we host metadata with your picture'), description: z.string().max(280).optional(), initialBuyEth: z.string().optional(), ...imgIn } }, async ({ name, symbol, metadataURI, description, initialBuyEth = '0', ...rest }) => {
+  const im = pickImg(rest); if (!im) return errOut(IMG_REQ);
+  const r = await postJ('/v1/tx/launch', { name, symbol, metadataURI, description, initialBuyEth, ...im });
+  if (!r.ok) return errOut(r);
+  return ok({ chainId: 8453, tx: r.tx, image: r.image, roadmap: r.roadmap, note: 'Unsigned. Sign and send from your agent wallet on Base. Token address = first indexed arg of TokenLaunched in the receipt. Deadline is 10 minutes. Your picture is attached to the token automatically once mined.' });
+});
+s.registerTool('build_team_launch_tx', { description: 'AgentPad v2 is the ONLY launch target. Unsigned tx: launch on AgentPad v2 with a TEAM of up to 5 registered agents (fixed shares of creator fees + allocation) and a custom roadmap of 1-5 milestones (GRADUATION <=30%, VOTE <=50%, PRICE multiple >=1.5, shares sum 100). Send from the lead wallet. REQUIRED (2.4.0): a token picture (imageUrl, imageBase64 or imageId).', inputSchema: {
+  lead: addr, name: z.string().min(1).max(64), symbol: z.string().min(1).max(16), metadataURI: z.string().optional(), description: z.string().max(280).optional(), team: z.array(z.object({ wallet: addr, sharePct: z.number().positive() })).max(4).optional().describe('other members; lead gets the rest'),
+  milestones: z.array(msSchema).max(5).optional().describe('empty = default roadmap'), initialBuyEth: z.string().optional(), ...imgIn } }, async ({ lead, name, symbol, metadataURI, description, team = [], milestones = [], initialBuyEth = '0', ...rest }) => {
+  const im = pickImg(rest); if (!im) return errOut(IMG_REQ);
   const others = team.filter(t => t.wallet.toLowerCase() !== lead.toLowerCase());
+  const r0 = await postJ('/v1/tx/launch', { name, symbol, description, ...im }); if (!r0.ok) return errOut(r0); // validates + hosts the picture
+  const uri = metadataURI || (r0.tx && (() => { try { const { decodeFunctionData } = VIEM; return decodeFunctionData({ abi, data: r0.tx.data }).args[2]; } catch { return ''; } })()) || '';
   const members = [lead, ...others.map(t => t.wallet)]; const shares = [Math.round((100 - others.reduce((a, t) => a + t.sharePct, 0)) * 100), ...others.map(t => Math.round(t.sharePct * 100))];
-  return tx('launchWithRoadmap', [{ name, symbol, metadataURI, team: members, shares, milestones: toMs(milestones) }, 0n, dl()], parseEther(initialBuyEth), 'Every team wallet must already be a registered agent. Simulate (eth_call) first: it reverts if a roadmap rule is broken.');
+  const out = JSON.parse(tx('launchWithRoadmap', [{ name, symbol, metadataURI: uri, team: members, shares, milestones: toMs(milestones) }, 0n, dl()], parseEther(initialBuyEth), 'Every team wallet must already be a registered agent. Simulate (eth_call) first: it reverts if a roadmap rule is broken.').content[0].text);
+  return ok({ ...out, image: r0.image });
+});
+s.registerTool('upload_token_image', { description: 'Upload a token picture (PNG, JPEG, WebP or GIF; min 64x64; max 2 MB; SVG/HTML rejected). Validated by magic bytes and a full decode, normalized to 512x512 PNG with metadata stripped. Returns imageId + imageUrl to pass to build_launch_tx. Free.', inputSchema: { imageUrl: z.string().optional().describe('https:// or ipfs:// link (we fetch it, private addresses blocked)'), imageBase64: z.string().optional().describe('raw base64 or a data: URI'), imagePath: z.string().optional().describe('local file path (stdio)') } }, async ({ imageUrl, imageBase64, imagePath }) => {
+  if (imagePath && !imageBase64) imageBase64 = fileB64(imagePath);
+  if (!imageUrl && !imageBase64) return errOut({ ok: false, error: 'IMAGE_REQUIRED', message: 'pass imageUrl or imageBase64' });
+  const r = await postJ('/v1/image', { imageUrl, imageBase64 }); return r.ok ? ok(r) : errOut(r);
+});
+s.registerTool('get_token_image', { description: 'Current picture of an AgentPad token (or the generated fallback), its IPFS CID, version history, creator and the metadata JSON URL.', inputSchema: { token: addr } }, async ({ token }) => ok({ ...(await getJ(`/v1/token/${token}/image`)), metadataJson: `${AP_API}/v1/token/${token}/metadata.json` }));
+s.registerTool('update_token_image', { description: 'Change a token picture any time (also after graduation to Uniswap). Only the token creator wallet can do it, by EIP-191 personal_sign. Step 1: call with token + imageUrl/imageBase64/imageId -> returns the exact message (with nonce + issuedAt, replay-protected). Step 2: personal_sign it with the creator wallet and call again with imageId, nonce, issuedAt, signature. Old versions are kept. This tool never touches keys.', inputSchema: { token: addr, ...imgIn, nonce: z.number().int().optional(), issuedAt: z.string().optional(), signature: z.string().optional() } }, async ({ token, imageUrl, imageId, imageBase64, imagePath, nonce, issuedAt, signature }) => {
+  if (imagePath && !imageBase64) imageBase64 = fileB64(imagePath);
+  let id = imageId;
+  if (!id) { if (!imageUrl && !imageBase64) return errOut(IMG_REQ); const up = await postJ('/v1/image', { imageUrl, imageBase64 }); if (!up.ok) return errOut(up); id = up.imageId; }
+  if (!signature) { const m = await getJ(`/v1/token/${token}/image/message?imageId=${id}`); return m.ok ? ok({ step: 'sign', ...m }) : errOut(m); }
+  const r = await postJ(`/v1/token/${token}/image`, { imageId: id, nonce, issuedAt, signature }); return r.ok ? ok(r) : errOut(r);
 });
 s.registerTool('build_buy_tx', { description: 'Unsigned tx: buy an AgentPad token on its curve (registered agents only before graduation). Works for v1 and v2 tokens. Optional wallet (2.3.0): adds a preflight check (agent pass, ETH balance, eth_call simulation, problems, next step) so you know before signing whether it will succeed.', inputSchema: { token: addr, eth: z.string(), slippagePct: z.number().min(0).max(50).optional(), wallet: addr.optional().describe('the wallet that will sign; adds a preflight check') } }, async ({ token, eth, slippagePct = 3, wallet }) => {
   const v = await version(token); const P = v === 2 ? PAD : V1, A = v === 2 ? abi : v1abi;
@@ -198,7 +231,7 @@ s.registerTool('onboard_and_buy', { description: 'Same as agentpad_buy, plus a c
   async (a) => { const r = await buildBuy(a); if (r.calls) r.bankr = r.calls.map(x => ({ endpoint: 'POST https://api.bankr.bot/wallet/submit', body: { transaction: { to: x.to, chainId: 8453, value: x.value, data: x.data }, description: 'AgentPad ' + x.step, waitForConfirmation: true } })); return ok(r); });
 
 // add-only (Oct 24): honest volume + transparency, from the public AgentPad API (computed from on-chain Trade events + live contract reads)
-const AP_API = process.env.AGENTPAD_API || 'https://agentpad.thevibehosting.com';
+// AP_API is defined near the top (2.4.0)
 const getJ = async (path) => { const r = await fetch(AP_API + path); return r.json(); };
 s.registerTool('honest_volume', { description: 'Honest AgentPad volume from real on-chain Trade events: gross volume, volume excluding each creator wallet, net ETH in (buys minus sells), unique trader wallets, and whether creators traded their own coin. Platform-wide plus per token. Optional token (symbol or 0x). Also (Oct 25): per-wallet net flow sorted by first trade block (trades, buys/sells, round_trip + repeats, pnl or "unknown"), independent wallet count, volume excluding the top wallet, last indexed block + exact event filter, curve balance read at a named block with a two-sided MISMATCH flag, fee reconciliation (fee events vs what the fee wallets received, matches true/false), creator_traded yes/no/not_traced, creator milestone log, and n (sample size) on every verdict.', inputSchema: { token: z.string().optional() } },
   async ({ token }) => { if (!token) return ok(await getJ('/v1/volume')); const t = await getJ('/v1/transparency?token=' + encodeURIComponent(token)); return ok({ token: t.token, honestVolume: t.honestVolume, balanceCheck: t.balanceCheck, mismatch: t.mismatch, feeReconciliation: t.feeReconciliation, creator_traded: t.creator_traded, creatorMilestoneLog: t.creatorMilestoneLog, indexing: t.indexing, verdicts: t.verdicts, error: t.error }); });

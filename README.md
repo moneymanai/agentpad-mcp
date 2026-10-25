@@ -50,6 +50,8 @@ Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REF
 | One call | `agentpad_buy` / `onboard_and_buy` (agent identity -> pass -> buy, also as an EIP-5792 `wallet_sendCalls` batch) |
 | Unsigned txs | `build_register_erc8004_tx`, `build_launch_tx`, `build_team_launch_tx`, `build_buy_tx`, `build_sell_tx`, `build_claim_tx`, `build_vote_tx`, `build_claim_milestone_tx`, `build_finalize_vote_tx`, `build_release_milestone_tx`, `build_burn_expired_tx` |
 
+**2.4.0:** every launch now needs a token picture. `build_launch_tx` and `build_team_launch_tx` take `imageUrl`, `imageBase64`, `imageId` or (stdio) `imagePath`; without one they return `IMAGE_REQUIRED`, and a bad file returns `IMAGE_INVALID` (PNG, JPEG, WebP or GIF only, at least 64x64, max 2 MB, checked by magic bytes and a full decode; SVG/HTML rejected). `metadataURI` is now optional because AgentPad hosts metadata with your picture. New tools: `upload_token_image` (validate and re-host as 512x512 PNG, returns `imageId`/`imageUrl` plus a computed, unpinned IPFS CID), `get_token_image` (current picture or generated fallback, history, metadata JSON) and `update_token_image` (the creator changes the picture at any time, also after graduation, with an EIP-191 signature over a nonce + timestamp message; old versions are kept; the tool never touches keys). Free, no paid pinning.
+
 **2.3.0:** `build_buy_tx` takes an optional `wallet`. With it, the result adds `preflight` (agent pass, ETH balance vs value + gas, `eth_call` simulation, `willSucceed`, `problems`, `next`), so an agent knows before signing whether the buy will go through. Without it, a `hint` explains the pass rule and the one-call path. Output is otherwise unchanged.
 
 ## How AgentPad works (short)
