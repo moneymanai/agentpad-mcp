@@ -63,7 +63,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.4.0' });
+const s = new McpServer({ name: 'agentpad', version: '2.4.1' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -73,7 +73,7 @@ s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI,
     creatorAllocation: `${Number((p[4] * 10000n) / p[3]) / 100}% of supply, free, locked in RoadmapVault; unlocks only by milestones after graduation + 3-day cliff; unmet tranches are burned`,
     milestoneKinds: { GRADUATION: 'token graduated (<=30% of allocation)', PRICE: 'Uniswap 6h+ TWAP >= N x graduation price', VOTE: `team claims it with a proof link; ONE VOTE PER REGISTERED AGENT IDENTITY (never token-weighted), team can't vote, quorum ${quorum}, ${Number(period) / 86400}-day vote, voter identity >= ${minAge} days old and must have traded (<=50% of allocation)` },
     fees: { tradeFeePct: Number(tf) / 100, creatorTeamPct: Number(cf) / 100, traderReferrerPct: Number(rf) / 100, creatorReferrerPct: Number(crf) / 100, launchFee: '0 (gas only)' },
-    docs: ['https://agentpad-base.surge.sh/llms.txt', 'https://agentpad-base.surge.sh/skill.md', 'https://agentpad-base.surge.sh/launch.md'],
+    docs: ['https://agentpadbase.com/llms.txt', 'https://agentpadbase.com/skill.md', 'https://agentpadbase.com/launch.md'],
     risks: 'Contracts are new and UNAUDITED. Most tokens go to zero. No returns promised. Cheap identities can still try to game votes; age, traded and quorum rules only raise the cost.' });
 });
 s.registerTool('list_tokens', { description: 'List AgentPad tokens (v2 newest first, then v1).', inputSchema: { limit: z.number().int().min(1).max(50).optional() } }, async ({ limit = 20 }) => {
@@ -88,7 +88,7 @@ s.registerTool('agent_status', { description: 'Is this wallet a registered Agent
   const [isA, exp, ref, cl, earned, rc, aref, traded, cl1] = await Promise.all([rd('isAgent', [wallet]), rd('passExpiry', [wallet]), rd('referrerOfAgent', [wallet]), rd('claimable', [wallet]), rd('totalEarned', [wallet]), rd('referralCount', [wallet]), rd('agentRefOf', [wallet]), rd('hasTraded', [wallet]), rd('claimable', [wallet], V1, v1abi)]);
   const seen = /^0x0+$/.test(aref) ? 0n : await rd('identityFirstSeen', [aref]);
   return ok({ wallet, isAgent: isA, registeredOnV2: Number(exp) > 0, passExpiryV2: Number(exp), identityRegisteredAt: Number(seen) || null, hasTradedV2: traded, referrer: ref, claimableEthV2: formatEther(cl), claimableEthV1: formatEther(cl1), lifetimeEarnedEthV2: formatEther(earned), referralCount: Number(rc),
-    note: Number(exp) > 0 ? undefined : 'v1 agents can launch/trade on v2 already. To vote on milestones, register on v2: build_register_erc8004_tx or the pass API (https://agentpad-base.surge.sh/api.txt).' });
+    note: Number(exp) > 0 ? undefined : 'v1 agents can launch/trade on v2 already. To vote on milestones, register on v2: build_register_erc8004_tx or the pass API (https://agentpadbase.com/api.txt).' });
 });
 s.registerTool('quote_buy', { description: 'Tokens out for an ETH amount on the curve (v1 or v2 token).', inputSchema: { token: addr, eth: z.string() } }, async ({ token, eth }) => {
   const v = await version(token); const [out, fee, refund] = await rd('quoteBuy', [token, parseEther(eth)], v === 2 ? PAD : V1, v === 2 ? abi : v1abi); return ok({ version: v, tokensOut: formatUnits(out, 18), feeEth: formatEther(fee), refundEth: formatEther(refund) });
@@ -97,7 +97,7 @@ s.registerTool('quote_sell', { description: 'ETH out for selling a whole-token a
   const v = await version(token); const [out, fee] = await rd('quoteSell', [token, parseUnits(amount, 18)], v === 2 ? PAD : V1, v === 2 ? abi : v1abi); return ok({ version: v, ethOut: formatEther(out), feeEth: formatEther(fee) });
 });
 s.registerTool('build_register_erc8004_tx', { description: 'Unsigned tx: register as an AgentPad v2 agent using an ERC-8004 agentId you own on Base (free, gas only, 30-day pass). Your identity = the agentId, so one agentId = one vote.', inputSchema: { agentId: z.string(), referrer: addr.optional() } }, async ({ agentId, referrer }) =>
-  tx('registerViaERC8004', [BigInt(agentId), referrer || DEFAULT_REF], 0n, 'No ERC-8004 identity yet? First call IdentityRegistry ' + ERC8004 + '.register(string agentURI), then this. Or use the pass API: https://agentpad-base.surge.sh/api.txt'));
+  tx('registerViaERC8004', [BigInt(agentId), referrer || DEFAULT_REF], 0n, 'No ERC-8004 identity yet? First call IdentityRegistry ' + ERC8004 + '.register(string agentURI), then this. Or use the pass API: https://agentpadbase.com/api.txt'));
 // add-only (Oct 25, 2.4.0): every launch REQUIRES a token picture. The API validates it (magic bytes + decode, >=64x64, <=2 MB, no SVG/HTML),
 // re-hosts it as a 512x512 PNG and puts it in the token metadata, then links it to the token when the launch is mined.
 const imgIn = { imageUrl: z.string().optional().describe('REQUIRED unless imageId/imageBase64 is given: https:// (or ipfs://) link to a PNG, JPEG, WebP or GIF, min 64x64, max 2 MB. We fetch, validate and re-host it.'),
@@ -207,7 +207,7 @@ async function buildBuy({ wallet, token, eth, agentId, referrer, slippagePct = 3
       if (!owner || owner.toLowerCase() !== wallet.toLowerCase()) throw new Error(`agentId ${agentId} is not owned by ${wallet} on ERC-8004 ${ERC8004}`);
       id = BigInt(agentId); identity = { status: 'owned', agentId: String(agentId) };
     } else {
-      const uri = agentURI || 'https://agentpad-base.surge.sh/agent/agentpad-agent.json';
+      const uri = agentURI || 'https://agentpadbase.com/agent/agentpad-agent.json';
       const held = await c.readContract({ address: ERC8004, abi: R8004, functionName: 'balanceOf', args: [wallet] }).catch(() => 0n);
       id = (await c.simulateContract({ address: ERC8004, abi: R8004, functionName: 'register', args: [uri], account: wallet })).result;
       calls.push({ step: 'identity', to: ERC8004, data: encodeFunctionData({ abi: R8004, functionName: 'register', args: [uri] }), value: '0', gas: GASL.identity.toString() });
