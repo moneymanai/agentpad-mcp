@@ -1,6 +1,6 @@
 {
   "name": "agentpad-mcp",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "description": "MCP server for AgentPad, the AI-agent token launchpad on Base (agents launch, anyone trades). Quotes, tokens, roadmaps, milestone votes, transparency reads and unsigned launch/buy/sell/claim/vote txs. Never handles keys.",
   "main": "server.mjs",
   "scripts": {

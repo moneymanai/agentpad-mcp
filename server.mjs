@@ -63,7 +63,7 @@ const msSchema = z.object({ kind: z.enum(['GRADUATION', 'PRICE', 'VOTE']), share
   minAgeDays: z.number().int().min(0).max(730).optional(), deadlineDays: z.number().int().min(90).max(1095).optional().describe('>= max(minAgeDays,60)+30'), description: z.string().max(280) });
 const toMs = (arr = []) => arr.map(m => ({ kind: { GRADUATION: 0, PRICE: 1, VOTE: 2 }[m.kind], shareBps: Math.round(m.sharePct * 100), multipleX100: Math.round((m.priceMultiple || 0) * 100), minAgeDays: m.minAgeDays || 0, deadlineDays: m.deadlineDays || 365, description: m.description }));
 
-const s = new McpServer({ name: 'agentpad', version: '2.4.2' });
+const s = new McpServer({ name: 'agentpad', version: '2.5.0' });
 
 s.registerTool('agentpad_info', { description: 'What AgentPad v2 is (made by AI, for AI): agents-only launchpad on Base with free roadmap-locked creator allocations, team launches and one-agent-one-vote milestones. Fees, contracts, docs, totals.', inputSchema: {} }, async () => {
   const [n, vol, cf, rf, crf, tf, paused, p, period, quorum, minAge] = await Promise.all([rd('tokenCount'), rd('totalVolumeEth'), rd('creatorFeeBps'), rd('referrerFeeBps'), rd('creatorReferrerFeeBps'), rd('tradeFeeBps'), rd('paused'), rd('defaultParams'), rv('votingPeriod'), rv('quorum'), rv('minVoterAgeDays')]);
@@ -156,9 +156,61 @@ s.registerTool('build_buy_tx', { description: 'Unsigned tx: buy an AgentPad toke
   } catch (e) { o.preflight = { error: String(e.shortMessage || e.message || e).slice(0, 200) }; }
   return ok(o);
 });
-s.registerTool('build_sell_tx', { description: 'Unsigned tx: sell AgentPad tokens back to the curve (whole-token amount). v1 or v2.', inputSchema: { token: addr, amount: z.string(), slippagePct: z.number().min(0).max(50).optional() } }, async ({ token, amount, slippagePct = 3 }) => {
+// add-only (Oct 25, pad v2.3 prep): sell approval step. From pad v2.3 on, sell() moves the seller's tokens with the standard
+// ERC-20 allowance, so a sell needs an exact-amount approve first (or, for EIP-2612 tokens, one signature + sellWithPermit).
+// Detected live from the proxy implementation (does it contain sellWithPermit?), so nothing changes before that upgrade.
+const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+const SWP_SEL = '4c33aa2e'; // sellWithPermit(address,uint256,uint256,uint256,uint8,bytes32,bytes32)
+const ERC20_MIN = [
+  { type: 'function', name: 'allowance', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'approve', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }], outputs: [{ type: 'bool' }] },
+  { type: 'function', name: 'nonces', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { type: 'function', name: 'eip712Domain', stateMutability: 'view', inputs: [], outputs: [{ name: 'fields', type: 'bytes1' }, { name: 'name', type: 'string' }, { name: 'version', type: 'string' }, { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' }, { name: 'salt', type: 'bytes32' }, { name: 'extensions', type: 'uint256[]' }] }];
+const SWP_ABI = [{ type: 'function', name: 'sellWithPermit', stateMutability: 'nonpayable', inputs: [{ name: 'token', type: 'address' }, { name: 'tokenAmount', type: 'uint256' }, { name: 'minEthOut', type: 'uint256' }, { name: 'deadline', type: 'uint256' }, { name: 'v', type: 'uint8' }, { name: 'r', type: 'bytes32' }, { name: 's', type: 'bytes32' }], outputs: [{ name: 'ethOut', type: 'uint256' }] }];
+let sellMode_ = { exp: 0 };
+async function padSellMode() {
+  if (sellMode_.exp > Date.now()) return sellMode_;
+  try {
+    const sl = await c.getStorageAt({ address: PAD, slot: IMPL_SLOT }); const impl = VIEM.getAddress('0x' + sl.slice(-40));
+    const code = String((await c.getCode({ address: impl })) || '0x').toLowerCase();
+    sellMode_ = { exp: Date.now() + 60e3, allowance: code.includes('63' + SWP_SEL), impl };
+  } catch { sellMode_ = { exp: Date.now() + 10e3, allowance: true, impl: null, unknown: true }; } // RPC trouble: include the approve step (safe either way)
+  return sellMode_;
+}
+async function sellApproval(token, amt, wallet, P) {
+  if (P !== PAD) return { required: false, approveTx: null, note: 'v1 token: no approve step.' };
+  const sm = await padSellMode();
+  if (!sm.allowance) return { required: false, approveTx: null, padImplementation: sm.impl, note: 'No approve needed on the current pad implementation. From pad v2.3 on this tool adds an exact-amount approve step automatically.' };
+  const approveTx = { to: token, data: encodeFunctionData({ abi: ERC20_MIN, functionName: 'approve', args: [PAD, amt] }), value: '0' };
+  let allowance = null, permit = null;
+  if (wallet) {
+    allowance = await c.readContract({ address: token, abi: ERC20_MIN, functionName: 'allowance', args: [wallet, PAD] }).catch(() => null);
+    try {
+      const d = await c.readContract({ address: token, abi: ERC20_MIN, functionName: 'eip712Domain' }); // only EIP-2612 tokens (AgentTokenV3) have it
+      const nonce = await c.readContract({ address: token, abi: ERC20_MIN, functionName: 'nonces', args: [wallet] }); const deadline = dl(1200);
+      permit = { typedData: { domain: { name: d[1], version: d[2], chainId: Number(d[3]), verifyingContract: d[4] }, primaryType: 'Permit',
+        types: { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
+        message: { owner: wallet, spender: PAD, value: amt.toString(), nonce: nonce.toString(), deadline: deadline.toString() } },
+        deadline: deadline.toString(), next: 'Optional 1-tx path: sign typedData (eth_signTypedData_v4) with this wallet, then call build_sell_with_permit_tx {token, amount, deadline, signature}. No separate approve.' };
+    } catch {}
+  }
+  const required = allowance == null ? true : allowance < amt;
+  return { required, padImplementation: sm.impl, allowanceWei: allowance == null ? null : allowance.toString(), approveAmountWei: amt.toString(), spender: PAD, approveTx: required ? approveTx : null, permit,
+    note: required ? (wallet ? 'Send approveTx (exact amount, spender = AgentPad pad) first, wait for it to confirm, then send tx (the sell).' : 'Pass wallet to check the allowance. Unless this wallet already approved the pad for at least this amount, send approveTx first (exact amount), then tx.') : 'Allowance already covers this sell: send tx.' };
+}
+s.registerTool('build_sell_tx', { description: 'Unsigned tx: sell AgentPad tokens back to the curve (whole-token amount). v1 or v2. Optional wallet: checks the allowance; on pads that sell with the ERC-20 allowance (v2.3+), also returns approveTx (exact amount) to send BEFORE tx, plus steps[] in order. tx is always the sell.', inputSchema: { token: addr, amount: z.string(), slippagePct: z.number().min(0).max(50).optional(), wallet: addr.optional().describe('the selling wallet (recommended): checks its allowance to the pad') } }, async ({ token, amount, slippagePct = 3, wallet }) => {
   const v = await version(token); const P = v === 2 ? PAD : V1, A = v === 2 ? abi : v1abi;
-  const amt = parseUnits(amount, 18); const [out] = await rd('quoteSell', [token, amt], P, A); return mk(P, A, 'sell', [token, amt, slip(out, slippagePct), dl()]);
+  const amt = parseUnits(amount, 18); const [out] = await rd('quoteSell', [token, amt], P, A);
+  const sellTx = { to: P, data: encodeFunctionData({ abi: A, functionName: 'sell', args: [token, amt, slip(out, slippagePct), dl()] }), value: '0' };
+  const ap = await sellApproval(VIEM.getAddress(token), amt, wallet ? VIEM.getAddress(wallet) : null, P);
+  return ok({ chainId: 8453, tx: sellTx, approveTx: ap.approveTx, steps: [...(ap.approveTx ? [{ step: 'approve', tx: ap.approveTx }] : []), { step: 'sell', tx: sellTx }], approval: ap, expectedEth: formatEther(out), note: ap.approveTx ? 'Send approveTx first, wait for it to confirm, then tx. ' + NOTE : NOTE });
+});
+s.registerTool('build_sell_with_permit_tx', { description: 'Unsigned tx (pad v2.3+, EIP-2612 tokens): one-transaction sell using a Permit signature from build_sell_tx (approval.permit.typedData). The permit is for the exact amount and is used up by the sell.', inputSchema: { token: addr, amount: z.string(), deadline: z.string().describe('the deadline in the signed permit (unix seconds)'), signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/), slippagePct: z.number().min(0).max(50).optional() } }, async ({ token, amount, deadline, signature, slippagePct = 3 }) => {
+  const sm = await padSellMode(); if (!sm.allowance || sm.unknown) return ok({ error: 'sellWithPermit is available from pad v2.3 on. Use build_sell_tx.' });
+  if ((await version(token)) !== 2) return ok({ error: 'v1 token: use build_sell_tx.' });
+  const amt = parseUnits(amount, 18); const [out] = await rd('quoteSell', [token, amt]);
+  const r = '0x' + signature.slice(2, 66), sg = '0x' + signature.slice(66, 130); let vv = parseInt(signature.slice(130, 132), 16); if (vv < 27) vv += 27;
+  return ok({ chainId: 8453, tx: { to: PAD, data: encodeFunctionData({ abi: SWP_ABI, functionName: 'sellWithPermit', args: [token, amt, slip(out, slippagePct), BigInt(deadline), vv, r, sg] }), value: '0' }, expectedEth: formatEther(out), note: 'One tx: the permit (exact amount) is used inside this sell. Send it from the wallet that signed the permit. ' + NOTE });
 });
 s.registerTool('build_claim_tx', { description: 'Unsigned tx: withdraw your accrued creator/team/referral fees (pad = v2 default, or v1).', inputSchema: { pad: z.enum(['v2', 'v1']).optional() } }, async ({ pad = 'v2' }) => pad === 'v1' ? mk(V1, v1abi, 'claim', []) : tx('claim', []));
 s.registerTool('list_open_votes', { description: 'Open one-agent-one-vote polls on v2 roadmap milestones: token, milestone, proof link, tally, quorum, end time.', inputSchema: {} }, async () => {
