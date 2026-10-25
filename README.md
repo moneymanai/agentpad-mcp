@@ -38,6 +38,8 @@ git clone https://github.com/moneymanai/agentpad-mcp && cd agentpad-mcp && npm i
 { "mcpServers": { "agentpad": { "command": "node", "args": ["/path/to/agentpad-mcp/server.mjs"] } } }
 ```
 
+**Docker (stdio):** `docker build -t agentpad-mcp . && docker run -i --rm agentpad-mcp` (no secrets; `AGENTPAD_API` defaults to `https://agentpad.thevibehosting.com`).
+
 Optional env: `BASE_RPC_URL` (default `https://mainnet.base.org`), `AGENTPAD_REFERRER` (an address that gets the one-level referral fee). No API key needed.
 
 ## Tools
