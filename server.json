@@ -12,7 +12,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://agentpad.thevibehosting.com/mcp"
+      "url": "https://api.agentpadbase.com/mcp"
     }
   ]
 }
